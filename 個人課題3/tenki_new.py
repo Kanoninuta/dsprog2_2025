@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 DB_PATH = "weather.db"
 
 
-# DB初期化
+# DBを作る（時間をDBに記録したい）
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -145,7 +145,7 @@ def main(page: ft.Page):
         padding=16,
     )
 
-    right = ft.Column([title, subtitle, cards], expand=True)
+    right = ft.Column([title, cards], expand=True)
 
     # DBの内容で画面更新
     def show_from_db(area_code):
@@ -159,7 +159,7 @@ def main(page: ft.Page):
             return
 
         title.value = f"{area_name}の天気予報"
-        subtitle.value = f"DB取得時刻: {fetched_at}"
+        
 
         cards.controls.clear()
         for date_str, code, text in rows:
