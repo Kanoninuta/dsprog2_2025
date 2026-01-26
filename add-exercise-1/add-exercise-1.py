@@ -7,33 +7,43 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-# =========================
-# 設定
-# =========================
+
+
 DB_PATH = "add-exercise-1.db"
 ORG = "google"
-BASE_URL = f"https://github.com/orgs/{ORG}/repositories"
+
+
+SEARCH_URL = "https://github.com/search?q=org:google&type=repositories"
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+    "Connection": "keep-alive",
 }
 
-SLEEP_SEC = 1  # 必須
+SLEEP_SEC = 1  
 
 
-# =========================
-# スター数変換（52.8k → 52800）
-# =========================
+# スター数直したい
+
 def to_int_stars(text: str) -> int:
     t = (text or "").strip().lower().replace(",", "")
     if not t:
         return 0
 
+    # 例: 52.8k → 52800
     if t.endswith("k"):
-        return int(float(t[:-1]) * 1000)
+        num = float(t[:-1])
+        return int(num * 1000)
 
+    # 例: 120
     if t.isdigit():
         return int(t)
 
+    # フォールバック
     digits = re.sub(r"[^\d]", "", t)
     return int(digits) if digits else 0
 
@@ -41,7 +51,7 @@ def to_int_stars(text: str) -> int:
 # =========================
 # DB初期化
 # =========================
-def init_db(conn):
+def init_db(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS google_repos (
@@ -55,10 +65,7 @@ def init_db(conn):
     conn.commit()
 
 
-# =========================
-# 保存
-# =========================
-def save_repo(conn, repo_name, lang, stars, scraped_at):
+def save_repo(conn: sqlite3.Connection, repo_name: str, lang: str | None, stars: int, scraped_at: str) -> None:
     cur = conn.cursor()
     cur.execute("""
     INSERT INTO google_repos (repo_name, primary_language, stars, scraped_at)
@@ -72,53 +79,79 @@ def save_repo(conn, repo_name, lang, stars, scraped_at):
 
 
 # =========================
-# 1ページ取得
+# HTTP GET（429対策リトライつき） + 必ずsleep
 # =========================
-def scrape_page(session, url):
-    resp = session.get(url, headers=HEADERS)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+def get_html(session: requests.Session, url: str, max_retries: int = 3) -> str:
+    last_err = None
+    for i in range(max_retries):
+        try:
+            resp = session.get(url, headers=HEADERS, timeout=25)
+            # 429/503 などはリトライ
+            if resp.status_code in (429, 503):
+                time.sleep(SLEEP_SEC * (i + 2))  # 1秒以上（要件は満たす）
+                continue
+            resp.raise_for_status()
+            html = resp.text
+            time.sleep(SLEEP_SEC)  # ★必須：各リクエストの間
+            return html
+        except Exception as e:
+            last_err = e
+            time.sleep(SLEEP_SEC * (i + 2))
+    raise RuntimeError(f"Failed to fetch: {url} ({last_err})")
 
-    repos = []
 
-    for row in soup.select("li.Box-row"):
-
-        # リポジトリ名
-        name_a = row.select_one('a[itemprop="name codeRepository"]')
-        if not name_a:
+# =========================
+# 検索ページから repoリンクを正規表現で拾う（壊れにくい）
+# =========================
+def extract_repo_names_from_search_html(html: str) -> list[str]:
+    # /google/<repo> のリンクだけ拾う（/issues などを除外）
+    names = re.findall(r'href="/google/([^"/]+)"', html)
+    # 変なもの除外 & 重複除去
+    seen = set()
+    cleaned = []
+    for n in names:
+        n = n.strip()
+        if not n or n.lower() in ("google", "orgs", "search"):
             continue
-
-        href = name_a.get("href", "")
-        m = re.match(r"^/google/([^/]+)$", href)
-        if not m:
+        if n in seen:
             continue
-
-        repo_name = m.group(1)
-
-        # 言語
-        lang_el = row.select_one('[itemprop="programmingLanguage"]')
-        lang = lang_el.get_text(strip=True) if lang_el else None
-
-        # スター
-        star_el = row.select_one('a[href$="/stargazers"]')
-        stars = to_int_stars(star_el.get_text(strip=True)) if star_el else 0
-
-        repos.append((repo_name, lang, stars))
-
-    # 次ページ
-    next_url = None
-    next_link = soup.select_one('a[rel="next"]')
-    if next_link and next_link.get("href"):
-        next_url = urljoin("https://github.com", next_link["href"])
-
-    return repos, next_url
+        seen.add(n)
+        cleaned.append(n)
+    return cleaned
 
 
 # =========================
-# メイン
+# repo個別ページから「主要言語」「スター数」を取る
 # =========================
-def main(max_pages=3):
+def scrape_repo_detail(session: requests.Session, repo_name: str) -> tuple[str | None, int]:
+    url = f"https://github.com/{ORG}/{repo_name}"
+    html = get_html(session, url)
 
+    # Bot対策ページなどを検知
+    if "Verify you are human" in html or "captcha" in html.lower():
+        # 取得不能のときは None/0 で返す（DBには入る）
+        return None, 0
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    lang_el = soup.select_one('[itemprop="programmingLanguage"]')
+    lang = lang_el.get_text(strip=True) if lang_el else None
+
+    stars = 0
+    star_el = soup.select_one(f'a[href="/{ORG}/{repo_name}/stargazers"]')
+    if star_el:
+        stars = to_int_stars(star_el.get_text(" ", strip=True))
+    else:
+        # フォールバック：stargazers を含むリンクの中で最大の数値
+        candidates = []
+        for a in soup.select('a[href*="stargazers"]'):
+            candidates.append(to_int_stars(a.get_text(" ", strip=True)))
+        stars = max(candidates) if candidates else 0
+
+    return lang, stars
+
+
+def main(search_pages: int = 3, max_repos: int = 30) -> None:
     jst = timezone(timedelta(hours=9))
     scraped_at = datetime.now(jst).isoformat(timespec="seconds")
 
@@ -127,27 +160,42 @@ def main(max_pages=3):
 
     session = requests.Session()
 
-    url = BASE_URL
-    page = 0
-    total = 0
+    # 1) 検索ページを回して repo名を集める
+    repo_names: list[str] = []
+    for p in range(1, search_pages + 1):
+        url = f"{SEARCH_URL}&p={p}"
+        print(f"[SEARCH {p}] GET {url}")
+        html = get_html(session, url)
+        names = extract_repo_names_from_search_html(html)
+        repo_names.extend(names)
 
-    while url and page < max_pages:
-        page += 1
-        print(f"[PAGE {page}] GET {url}")
+    # 重複除去して上限を適用
+    unique = []
+    seen = set()
+    for n in repo_names:
+        if n in seen:
+            continue
+        seen.add(n)
+        unique.append(n)
+    unique = unique[:max_repos]
 
-        repos, next_url = scrape_page(session, url)
+    if not unique:
+        print("Done. saved/updated: 0 repos")
+        print("NOTE: GitHubがBot対策ページを返している可能性があります。")
+        conn.close()
+        return
 
-        for repo_name, lang, stars in repos:
-            save_repo(conn, repo_name, lang, stars, scraped_at)
-            total += 1
-
-        time.sleep(SLEEP_SEC)  # ← 必須
-
-        url = next_url
+    # 2) 各repoの個別ページに行って言語・スター取得 → DB保存
+    saved = 0
+    for i, repo in enumerate(unique, start=1):
+        print(f"[REPO {i}/{len(unique)}] GET https://github.com/{ORG}/{repo}")
+        lang, stars = scrape_repo_detail(session, repo)
+        save_repo(conn, repo, lang, stars, scraped_at)
+        saved += 1
 
     conn.close()
-    print(f"Done. saved/updated: {total} repos")
+    print(f"Done. saved/updated: {saved} repos")
 
 
 if __name__ == "__main__":
-    main(max_pages=3)
+    main(search_pages=3, max_repos=30)
