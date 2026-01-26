@@ -1,15 +1,20 @@
+*入力1
+"""
+見た目がずれてしまうんだけど，整える方法はある？
+
 import flet as ft
 import math
+
 
 class CalcButton(ft.ElevatedButton):
     def __init__(self, text, button_clicked, expand=1):
         super().__init__(
-            content=ft.Text(text, no_wrap=True),
+            content=ft.Text(text),
             on_click=button_clicked,
             expand=expand,
             data=text,
-            height=55,
         )
+
 
 class DigitButton(CalcButton):
     def __init__(self, text, button_clicked, expand=1):
@@ -26,8 +31,8 @@ class ActionButton(CalcButton):
 
 
 class ExtraActionButton(CalcButton):
-    def __init__(self, text, button_clicked, expand=1):
-        super().__init__(text, button_clicked, expand)
+    def __init__(self, text, button_clicked):
+        super().__init__(text, button_clicked)
         self.bgcolor = ft.Colors.BLUE_GREY_100
         self.color = ft.Colors.BLACK
 
@@ -47,16 +52,12 @@ class CalculatorApp(ft.Container):
             controls=[
                 ft.Row(controls=[self.result], alignment="end"),
 
-                # --- 科学計算ボタン（2行に分割） ---
+                # --- 科学計算ボタン（追加） ---
                 ft.Row(
                     controls=[
                         ExtraActionButton("sin", self.button_clicked),
                         ExtraActionButton("cos", self.button_clicked),
                         ExtraActionButton("tan", self.button_clicked),
-                    ]
-                ),
-                ft.Row(
-                    controls=[
                         ExtraActionButton("√", self.button_clicked),
                         ExtraActionButton("x²", self.button_clicked),
                     ]
@@ -119,7 +120,7 @@ class CalculatorApp(ft.Container):
             else:
                 self.result.value = self.result.value + data
 
-        # 追加
+        # --- 科学計算（追加） ---
         elif data in ("sin", "cos", "tan", "√", "x²"):
             try:
                 v = float(self.result.value)
@@ -138,9 +139,8 @@ class CalculatorApp(ft.Container):
                 elif data == "x²":
                     self.result.value = str(self.format_number(v ** 2))
 
-                # 科学計算は「単項演算」なので、次の入力で上書きする挙動に
                 self.new_operand = True
-                self.operator = "+"
+                self.operator = "+"      # 科学計算後に演算子をリセット
                 self.operand1 = 0
 
             except ValueError:
@@ -198,3 +198,62 @@ def main(page: ft.Page):
 
 
 ft.app(target=main)
+"""
+
+*出力1
+"""
+あるある！いま 幅350の中に「科学ボタン5個」を1行に詰め込んでるので、1ボタンあたりの幅が狭くなって sin が s\nin みたいに 自動改行されて見た目が崩れてます。
+
+整えるなら、いちばん簡単で確実なのはこの2つ👇
+
+方法A（おすすめ）：科学ボタンを2行に分ける
+
+これだけで “詰まり” が解消して、見た目が一気に直ります。
+
+① 科学ボタン部分をこう変更
+# --- 科学計算ボタン（追加） ---
+ft.Row(
+    controls=[
+        ExtraActionButton("sin", self.button_clicked),
+        ExtraActionButton("cos", self.button_clicked),
+        ExtraActionButton("tan", self.button_clicked),
+    ]
+),
+ft.Row(
+    controls=[
+        ExtraActionButton("√", self.button_clicked),
+        ExtraActionButton("x²", self.button_clicked),
+    ]
+),
+
+方法B：文字を改行させない + 中央揃え + 高さ統一
+
+「見た目を完全に揃えたい」ならこっちも入れるとキレイです。
+
+② CalcButton をこれに置き換え
+class CalcButton(ft.ElevatedButton):
+    def __init__(self, text, button_clicked, expand=1):
+        super().__init__(
+            content=ft.Container(
+                content=ft.Text(text, no_wrap=True),
+                alignment=ft.alignment.center,
+            ),
+            on_click=button_clicked,
+            expand=expand,
+            data=text,
+            height=55,  # ← 高さを統一
+        )
+
+
+no_wrap=True で 改行禁止
+
+Container + alignment=center で 文字が中央
+
+height=55 で ボタンの高さが揃う
+
+結論
+
+まず **方法A（2行に分ける）**だけでほぼ直る
+
+さらに整えるなら **方法B（no_wrap + 高さ統一）**も入れる
+"""
