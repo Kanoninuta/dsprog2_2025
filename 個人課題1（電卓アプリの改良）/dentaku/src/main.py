@@ -1,4 +1,5 @@
 import flet as ft
+import math
 
 
 class CalcButton(ft.ElevatedButton):
@@ -42,9 +43,22 @@ class CalculatorApp(ft.Container):
         self.bgcolor = ft.Colors.BLACK
         self.border_radius = ft.border_radius.all(20)
         self.padding = 20
+
         self.content = ft.Column(
             controls=[
                 ft.Row(controls=[self.result], alignment="end"),
+
+                # --- 科学計算ボタン（追加） ---
+                ft.Row(
+                    controls=[
+                        ExtraActionButton("sin", self.button_clicked),
+                        ExtraActionButton("cos", self.button_clicked),
+                        ExtraActionButton("tan", self.button_clicked),
+                        ExtraActionButton("√", self.button_clicked),
+                        ExtraActionButton("x²", self.button_clicked),
+                    ]
+                ),
+
                 ft.Row(
                     controls=[
                         ExtraActionButton("AC", self.button_clicked),
@@ -95,14 +109,41 @@ class CalculatorApp(ft.Container):
             self.result.value = "0"
             self.reset()
 
-        elif data in ("1","2","3","4","5","6","7","8","9","0","."):
+        elif data in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "."):
             if self.result.value == "0" or self.new_operand:
                 self.result.value = data
                 self.new_operand = False
             else:
                 self.result.value = self.result.value + data
 
-        elif data in ("+","-","*","/"):
+        # --- 科学計算（追加） ---
+        elif data in ("sin", "cos", "tan", "√", "x²"):
+            try:
+                v = float(self.result.value)
+
+                if data == "sin":
+                    self.result.value = str(self.format_number(math.sin(math.radians(v))))
+                elif data == "cos":
+                    self.result.value = str(self.format_number(math.cos(math.radians(v))))
+                elif data == "tan":
+                    self.result.value = str(self.format_number(math.tan(math.radians(v))))
+                elif data == "√":
+                    if v < 0:
+                        self.result.value = "Error"
+                    else:
+                        self.result.value = str(self.format_number(math.sqrt(v)))
+                elif data == "x²":
+                    self.result.value = str(self.format_number(v ** 2))
+
+                self.new_operand = True
+                self.operator = "+"      # 科学計算後に演算子をリセット
+                self.operand1 = 0
+
+            except ValueError:
+                self.result.value = "Error"
+                self.reset()
+
+        elif data in ("+", "-", "*", "/"):
             self.result.value = self.calculate(self.operand1, float(self.result.value), self.operator)
             self.operator = data
             if self.result.value == "Error":
