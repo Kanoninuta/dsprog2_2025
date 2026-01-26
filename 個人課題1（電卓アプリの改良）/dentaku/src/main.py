@@ -119,12 +119,11 @@ class CalculatorApp(ft.Container):
             else:
                 self.result.value = self.result.value + data
 
-        # --- 科学計算 ---
+        # 追加
         elif data in ("sin", "cos", "tan", "√", "x²"):
             try:
                 v = float(self.result.value)
 
-                # 角度は「度」で計算（ラジアンに変換してから三角関数）
                 if data == "sin":
                     self.result.value = str(self.format_number(math.sin(math.radians(v))))
                 elif data == "cos":
