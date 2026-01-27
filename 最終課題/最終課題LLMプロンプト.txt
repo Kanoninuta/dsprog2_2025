@@ -1,0 +1,119 @@
+＊入力1
+
+ターミナルではvenvに入っているのに，vscodeでは選択できません
+
+
+＊出力1
+あるあるです。理由はだいたい 「VS Codeが開いてるフォルダ」と、ターミナルで有効化してる .venv の場所が違う か、自動検出に引っかかってない のどっちかです。
+
+
+まず一番効く解決策（確実）
+1) VS Codeで「.venvがあるフォルダ」を開く
+
+VS Code → File > Open Folder...
+→ .venv が存在するフォルダを開いてください。
+
+確認コマンド（ターミナルで）：
+
+pwd
+ls -a
+
+
+ここで .venv が見えるフォルダを VS Code で開くのが正解。
+
+それでも出ないとき（手動で指定できる）
+2) Interpreter をパス指定で選ぶ
+
+VS Codeで
+Cmd + Shift + P → Python: Select Interpreter
+→ Enter interpreter path...
+→ Find... でこのファイルを選択：
+
+/Users/kanoninuta/2025/4q/dsprog_2025/.venv/bin/python
+
+（あなたの which python の結果そのまま）
+
+毎回固定したいなら（おすすめ）
+
+プロジェクトの .vscode/settings.json にこれを書けばOK：
+
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+}
+
+
+※ ${workspaceFolder} は「VS Codeで開いてるフォルダ」なので、やっぱり .venv がその直下にある必要があります。
+
+最後に更新
+
+選択が反映されない時は：
+
+Cmd + Shift + P → Developer: Reload Window
+
+必要なら、pwd と ls -a の結果（.venv があるか）を貼ってくれれば、どのフォルダを VS Code で開けばいいか一発で指示できます。
+
+
+
+
+*入力2
+class InboundAnalyzer:
+に
+# グラフ
+    def plot_recovery(self, base_year=2019, top_n=10, exclude_aggregate=True, min_base_total=0):
+        df = self.get_recovery_rate(
+            base_year=base_year,
+            exclude_aggregate=exclude_aggregate,
+            min_base_total=min_base_total
+        ).head(top_n)
+
+        plt.figure(figsize=(10, 5))
+        plt.bar(df["country"], df["recovery_rate"])
+        plt.xticks(rotation=45, ha="right")
+        plt.title(f"Recovery Rate - Top {top_n}")
+        plt.ylabel("Recovery Rate")
+        plt.tight_layout()
+        plt.show()
+
+を入れるなら，ワーストも入れたい
+
+＊出力2
+いいね、そこまでやると一気に完成度上がる 😎🔥
+
+今は「Top N」だけだから、
+Best（上位）とWorst（下位）を両方描ける関数にしよう。
+
+✅ 改良版：Top / Bottom 両対応
+
+これを InboundAnalyzer に追加（または置き換え）してOK。
+
+# グラフ表示（上位・下位両対応）
+def plot_recovery(
+    self,
+    base_year=2019,
+    compare_year=2024,
+    top_n=10,
+    mode="top",  # "top" or "bottom"
+    exclude_aggregate=True,
+    min_base_total=0
+):
+    df = self.get_recovery_rate(
+        base_year=base_year,
+        compare_year=compare_year,
+        exclude_aggregate=exclude_aggregate,
+        min_base_total=min_base_total
+    )
+
+    if mode == "top":
+        df_plot = df.sort_values("recovery_rate", ascending=False).head(top_n)
+        title = f"Recovery Rate Top {top_n} ({compare_year} / {base_year})"
+    else:
+        df_plot = df.sort_values("recovery_rate").head(top_n)
+        title = f"Recovery Rate Bottom {top_n} ({compare_year} / {base_year})"
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(df_plot["country"], df_plot["recovery_rate"])
+    plt.xticks(rotation=45, ha="right")
+    plt.title(title)
+    plt.ylabel("Recovery Rate")
+    plt.tight_layout()
+    plt.show()
