@@ -26,7 +26,7 @@ def get_xlsx_bytes(url: str) -> bytes:
     r.raise_for_status()
     return r.content
 
-# 例: "1996年　1月" / "2月" を (year, month) にする（年がない場合は prev_year を使う）
+#日付を揃える
 def parse_year_month(text, prev_year):
     if pd.isna(text):
         return None, None, prev_year
@@ -60,14 +60,10 @@ def init_db(conn: sqlite3.Connection):
     conn.commit()
 
 def extract_country_rows_from_sheet(xlsx_bytes: bytes, sheet_name: str, fetched_at: str):
-    # header=None で生読み
+    
     df = pd.read_excel(BytesIO(xlsx_bytes), sheet_name=sheet_name, header=None)
 
-    # このExcelは
-    # 行1: 国名（例: 韓国）
-    # 行2: 指標名（入国総数/観光客/商用客...）
-    # 行3以降: データ
-    # 列1: 月（1996年1月, 2月...）
+
     header_country_row = 1
     header_metric_row = 2
     data_start_row = 3
@@ -76,15 +72,14 @@ def extract_country_rows_from_sheet(xlsx_bytes: bytes, sheet_name: str, fetched_
     countries = df.iloc[header_country_row].tolist()
     metrics = df.iloc[header_metric_row].tolist()
 
-    # 「入国総数」列だけ拾う（国名が入っている列）
+    # 「入国総数」列だけ
     target_cols = []
     for col_idx, (c, m) in enumerate(zip(countries, metrics)):
         if pd.isna(c) or pd.isna(m):
             continue
         if str(m).strip() == "入国総数":
             country = str(c).strip()
-            # 集計列も混ざるので必要ならここで除外/採用を決める
-            # 今回は国別比較なので、"アジア総計" や "欧州計" 等は除外する
+    #　集まりは除外
             if country.endswith("計") or "総計" in country:
                 continue
             target_cols.append((col_idx, country))
@@ -136,19 +131,12 @@ def main():
         print(sheet, "rows:", len(rows))
         total += len(rows)
 
-    # 簡単な確認（2019年と最新年の国別合計の上位を出す）
-    df_check = pd.read_sql_query("""
-        SELECT country, year, SUM(visitors) AS total_visitors
-        FROM inbound_country
-        WHERE year IN (2019, (SELECT MAX(year) FROM inbound_country))
-        GROUP BY country, year
-        ORDER BY year DESC, total_visitors DESC
-        LIMIT 20;
-    """, conn)
+
+
 
     conn.close()
     print("inserted_total_rows:", total)
-    print(df_check)
+ 
 
 if __name__ == "__main__":
     main()
